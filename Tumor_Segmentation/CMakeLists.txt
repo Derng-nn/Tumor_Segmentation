@@ -1,26 +1,32 @@
-cmake_minimum_required(VERSION 3.20.6...3.22.6 FATAL_ERROR)
-
-project(Tumor_Segmentation)
+#-----------------------------------------------------------------------------
+set(MODULE_NAME Tumor_Segmentation)
 
 #-----------------------------------------------------------------------------
-# Extension meta-information
-set(EXTENSION_HOMEPAGE "https://github.com/Derng-nn/Tumor_Segmentation.git")
-set(EXTENSION_CONTRIBUTORS "Noppanon Nobnop (Image Lab.)")
-set(EXTENSION_DESCRIPTION "Pelvic tumor segmentation")
-set(EXTENSION_ICONURL "https://github.com/Derng-nn/Tumor_Segmentation/Tumor_Segmentation/Resources/Icons/Tumor_Segmentation.png")
-set(EXTENSION_SCREENSHOTURLS "")
-set(EXTENSION_DEPENDS "NA") 
+set(MODULE_PYTHON_SCRIPTS
+  ${MODULE_NAME}.py
+  )
+
+set(MODULE_PYTHON_RESOURCES
+  Resources/Icons/${MODULE_NAME}.png
+  Resources/UI/${MODULE_NAME}.ui
+  Resources/Models/unet.onnx
+  )
 
 #-----------------------------------------------------------------------------
-# Extension dependencies
-find_package(Slicer REQUIRED)
-include(${Slicer_USE_FILE})
+slicerMacroBuildScriptedModule(
+  NAME ${MODULE_NAME}
+  SCRIPTS ${MODULE_PYTHON_SCRIPTS}
+  RESOURCES ${MODULE_PYTHON_RESOURCES}
+  WITH_GENERIC_TESTS
+  )
 
 #-----------------------------------------------------------------------------
-# Extension modules
-add_subdirectory(Tumor_Segmentation)
-## NEXT_MODULE
+if(BUILD_TESTING)
 
-#-----------------------------------------------------------------------------
-include(${Slicer_EXTENSION_GENERATE_CONFIG})
-include(${Slicer_EXTENSION_CPACK})
+  # Register the unittest subclass in the main script as a ctest.
+  # Note that the test will also be available at runtime.
+  slicer_add_python_unittest(SCRIPT ${MODULE_NAME}.py)
+
+  # Additional build-time testing
+  add_subdirectory(Testing)
+endif()
