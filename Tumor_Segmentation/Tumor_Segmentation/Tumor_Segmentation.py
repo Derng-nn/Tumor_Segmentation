@@ -3,12 +3,17 @@ import os
 from typing import Annotated
 
 import numpy as np
+
+ensurePythonPackage("onnxruntime")
+ensurePythonPackage("opencv-python", "cv2")
+
 import onnxruntime as ort
 import cv2
 
 import vtk
 
 import slicer
+
 from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
@@ -20,6 +25,17 @@ from slicer.parameterNodeWrapper import (
 
 from slicer import vtkMRMLScalarVolumeNode
 
+def ensurePythonPackage(packageName, importName=None):
+    import importlib
+    import slicer
+
+    if importName is None:
+        importName = packageName
+
+    try:
+        importlib.import_module(importName)
+    except ModuleNotFoundError:
+        slicer.util.pip_install(packageName)
 
 #
 # Tumor_Segmentation
