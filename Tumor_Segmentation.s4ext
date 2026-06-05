@@ -2,13 +2,16 @@ scm git
 scmurl https://github.com/Derng-nn/Tumor_Segmentation.git
 scmrevision main
 
-depends NA
+depends Slicer
 
-homepage https://github.com/Derng-nn/Tumor_Segmentation
 category Segmentation
 contributors Noppanon Nobnop (Image Lab.)
 description Pelvic tumor segmentation from MRI using U-Net and ONNX Runtime.
-iconurl https://raw.githubusercontent.com/Derng-nn/Tumor_Segmentation/main/Tumor_Segmentation.png
-status Beta
 
+homepage https://github.com/Derng-nn/Tumor_Segmentation
+iconurl https://raw.githubusercontent.com/Derng-nn/Tumor_Segmentation/main/Tumor_Segmentation.png
+
+status Beta
 enabled 1
+
+build_subdirectory .
