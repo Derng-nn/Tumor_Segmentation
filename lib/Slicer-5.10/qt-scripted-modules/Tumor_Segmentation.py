@@ -235,6 +235,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         )
 
         self.endSlice = sliceIndex
+        print("Selected end slice:", sliceIndex)
         self.ui.endSliceLabel.setText(f"End: {sliceIndex}")
 
 
@@ -622,6 +623,13 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         if endSlice is None:
             endSlice = depth - 1
 
+        else:
+            endSlice = min(endSlice, depth - 1)
+
+        print(f"Volume depth = {depth}")
+        print(f"Start slice = {startSlice}")
+        print(f"End slice = {endSlice}")
+
         outputMask = np.zeros_like(vol, dtype=np.uint8)
 
         # -----------------------------
@@ -640,7 +648,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         # -----------------------------
         # Slice loop
         # -----------------------------
-        for i in range(startSlice, endSlice + 1):
+        for i in range(startSlice, min(endSlice + 1, depth)):
 
             sliceImg = vol[i]
 
