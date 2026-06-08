@@ -3,17 +3,12 @@ import os
 from typing import Annotated
 
 import numpy as np
-
-ensurePythonPackage("onnxruntime")
-ensurePythonPackage("opencv-python", "cv2")
-
 import onnxruntime as ort
 import cv2
 
 import vtk
 
 import slicer
-
 from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
@@ -25,17 +20,6 @@ from slicer.parameterNodeWrapper import (
 
 from slicer import vtkMRMLScalarVolumeNode
 
-def ensurePythonPackage(packageName, importName=None):
-    import importlib
-    import slicer
-
-    if importName is None:
-        importName = packageName
-
-    try:
-        importlib.import_module(importName)
-    except ModuleNotFoundError:
-        slicer.util.pip_install(packageName)
 
 #
 # Tumor_Segmentation
@@ -235,7 +219,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         )
 
         self.endSlice = sliceIndex
-        print("Selected end slice:", sliceIndex)
         self.ui.endSliceLabel.setText(f"End: {sliceIndex}")
 
 
@@ -620,20 +603,8 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         depth, height, width = vol.shape
 
-        startSlice = max(0, startSlice)
-
         if endSlice is None:
             endSlice = depth - 1
-
-        if endSlice is None:
-            endSlice = depth - 1
-
-        startSlice = min(startSlice, depth - 1)
-        endSlice = min(endSlice, depth - 1)
-
-        print(f"Volume depth = {depth}")
-        print(f"Start slice = {startSlice}")
-        print(f"End slice = {endSlice}")
 
         outputMask = np.zeros_like(vol, dtype=np.uint8)
 
