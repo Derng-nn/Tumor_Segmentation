@@ -620,11 +620,16 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         depth, height, width = vol.shape
 
+        startSlice = max(0, startSlice)
+
         if endSlice is None:
             endSlice = depth - 1
 
-        else:
-            endSlice = min(endSlice, depth - 1)
+        if endSlice is None:
+            endSlice = depth - 1
+
+        startSlice = min(startSlice, depth - 1)
+        endSlice = min(endSlice, depth - 1)
 
         print(f"Volume depth = {depth}")
         print(f"Start slice = {startSlice}")
@@ -648,7 +653,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         # -----------------------------
         # Slice loop
         # -----------------------------
-        for i in range(startSlice, min(endSlice + 1, depth)):
+        for i in range(startSlice, endSlice + 1):
 
             sliceImg = vol[i]
 
