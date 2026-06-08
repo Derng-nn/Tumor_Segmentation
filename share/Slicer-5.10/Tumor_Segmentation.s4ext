@@ -1,0 +1,35 @@
+# This is source code manager
+scm git
+scmurl https://github.com/Derng-nn/Tumor_Segmentation.git
+scmrevision 1.0.0.0 (2026-06-08)
+
+# The dependencies will be built first
+depends OpenCV onnxruntime
+
+# Inner build directory (default is ".")
+build_subdirectory .
+
+# homepage
+homepage https://github.com/Derng-nn/Tumor_Segmentation
+
+# Firstname1 Lastname1 ([SubOrg1, ]Org1), Firstname2 Lastname2 ([SubOrg2, ]Org2)
+contributors Noppanon Nobnop (Image Lab, Biomedical Engineering, Srinakharinwirot University)
+
+# Match category in the xml description of the module (where it shows up in Modules menu)
+category Segmentation
+
+# url to icon (png, size 148x148 pixels)
+iconurl https://raw.githubusercontent.com/Derng-nn/Tumor_Segmentation/main/Tumor_Segmentation.png
+
+# Give people an idea what to expect from this code
+#  - Is it just a test or something you stand behind?
+status 
+
+# One line stating what the module does
+description Fully automatic & semi-automatic pelvic tumor segmentation in MRI using "Tumor_Segmentator" AI model.
+
+# Space separated list of urls
+screenshoturls
+
+# 0 or 1: Define if the extension should be enabled after its installation.
+enabled 1

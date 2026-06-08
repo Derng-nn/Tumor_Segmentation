@@ -1,0 +1,15 @@
+[
+  {
+    "extension_id": "tumor_seg_001",
+    "name": "Tumor_Segmentation",
+    "category": "Segmentation",
+    "version": "1.0.0",
+    "description": "Extension for Tumor Segmentation",
+    "contributors": "Noppanon Nobnop",
+    "homepage": "http://localhost:8000",
+    "repository_url": "",
+    "icon_url": "http://localhost:8000/lib/Slicer-5.6/qt-scripted-modules/Resources/Icons/Tumor_Segmentation.png",
+    "download_url": "http://localhost:8000/Tumor_Segmentation_Package.zip",
+    "enabled": true
+  }
+]
