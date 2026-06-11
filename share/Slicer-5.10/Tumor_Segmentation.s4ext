@@ -9,7 +9,9 @@ scm git
 scmurl https://github.com/Derng-nn/Tumor_Segmentation.git
 scmrevision 1.0.0.0 (2026-06-08)
 
-# The dependencies will be built first
+# list dependencies
+# - These should be names of other modules that have .s4ext files
+# - The dependencies will be built first
 depends OpenCV onnxruntime
 
 # Inner build directory (default is ".")
@@ -19,6 +21,7 @@ build_subdirectory .
 homepage https://github.com/Derng-nn/Tumor_Segmentation
 
 # Firstname1 Lastname1 ([SubOrg1, ]Org1), Firstname2 Lastname2 ([SubOrg2, ]Org2)
+# For example: Jane Roe (Superware), John Doe (Lab1, Nowhere), Joe Bloggs (Noware)
 contributors Noppanon Nobnop (Image Lab, Biomedical Engineering, Srinakharinwirot University)
 
 # Match category in the xml description of the module (where it shows up in Modules menu)
