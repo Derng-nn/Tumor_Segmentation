@@ -76,8 +76,8 @@ class Tumor_Segmentation(ScriptedLoadableModule):
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("Tumor SegmentationTest")
-        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Registration")]
+        self.parent.title = _("Tumor Segmentation")
+        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Segmentation")]
         self.parent.dependencies = []  
         self.parent.contributors = ["Noppanon Nobnop (Department of Biomedical Engineering Srinakharinwirot University.)"]  
         self.parent.helpText = _("""
