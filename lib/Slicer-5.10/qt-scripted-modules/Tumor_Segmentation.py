@@ -1,7 +1,36 @@
 import logging
 import os
-from typing import Annotated
+import slicer
 
+# -----------------------------
+# Auto install required packages
+# -----------------------------
+def ensurePythonPackage(packageName, importName=None):
+    if importName is None:
+        importName = packageName
+
+    try:
+        __import__(importName)
+    except ImportError:
+        slicer.util.infoDisplay(
+            f"Installing required package: {packageName}\n"
+            "This may take a few minutes."
+        )
+
+        slicer.util.pip_install(packageName)
+
+        try:
+            __import__(importName)
+        except ImportError:
+            raise RuntimeError(
+                f"Failed to install Python package: {packageName}"
+            )
+
+# Install if missing
+ensurePythonPackage("onnxruntime")
+ensurePythonPackage("opencv-python", "cv2")
+
+# Normal imports
 import numpy as np
 import onnxruntime as ort
 import cv2
