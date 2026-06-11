@@ -1,96 +1,41 @@
 import logging
 import os
-from logging.handlers import RotatingFileHandler
 from typing import Annotated
 
-import numpy as np
 import vtk
-
 import slicer
 from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 from slicer.parameterNodeWrapper import parameterNodeWrapper
-
 from slicer import vtkMRMLScalarVolumeNode
-
-# ====================================================================
-# ระบบรักษาสิทธิ์และการตั้งค่าไฟล์ Log อัตโนมัติ (ป้องกันปัญหาตอนย้ายเครื่อง)
-# ====================================================================
-def setup_module_logger():
-    """
-    ตั้งค่า Logger ประจำโมดูล ให้เขียนไฟล์ Log อยู่ในโครงสร้างโฟลเดอร์ของตัวเองเสมอ
-    และควบคุมขนาดไฟล์ไม่ให้บวมขึ้นเรื่อยๆ
-    """
-    logger_name = "TumorSegmentationLogger"
-    logger = logging.getLogger(logger_name)
-    
-    # ถ้าถูก Initialize ไปแล้วในเซสชันนี้ ไม่ต้องสร้าง Handler ซ้ำ (ป้องกัน Log เบิ้ลบรรทัด)
-    if logger.handlers:
-        return logger
-
-    logger.setLevel(logging.INFO)
-    try:
-        # บังคับหา Path สัมบูรณ์ของโฟลเดอร์ปัจจุบัน (Tumor_Segmentation/)
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        log_dir = os.path.join(current_dir, "Resources", "Logs")
-        
-        # สร้างโฟลเดอร์ Logs มารองรับถ้ายังไม่มี
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-            
-        log_path = os.path.join(log_dir, "tumor_segmentation.log")
-        
-        # จำกัดขนาดไฟล์ที่ 500KB และหมุนเวียนเก็บสำรองสูงสุด 3 ไฟล์ (.log, .log.1, .log.2)
-        file_handler = RotatingFileHandler(log_path, maxBytes=500000, backupCount=3, encoding='utf-8')
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-        logger.info("=== Tumor Segmentation Logger Initialized Successfully ===")
-        
-    except Exception as e:
-        # แผนสำรอง: หากเครื่องปลายทางล็อกสิทธิ์โฟลเดอร์ (Write Access Denied) ให้ย้ายไปเซฟที่ Temp ของระบบ
-        fallback_dir = slicer.app.temporaryPath
-        log_path = os.path.join(fallback_dir, "tumor_segmentation_fallback.log")
-        file_handler = RotatingFileHandler(log_path, maxBytes=500000, backupCount=3, encoding='utf-8')
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-        logger.warning(f"Cannot write log to module directory. Fallback to Slicer Temp: {e}")
-
-    return logger
-
-# เรียกใช้งาน Logger ระดับ Global ภายในไฟล์นี้
-log = setup_module_logger()
-
 
 #
 # Tumor_Segmentation
 #
 
 class Tumor_Segmentation(ScriptedLoadableModule):
-    """Uses ScriptedLoadableModule base class, available at:
-    https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
-    """
+    """Uses ScriptedLoadableModule base class"""
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("Tumor Segmentation")
+        self.parent.title = _("Tumor Segmentation")  
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "Segmentation")]
         self.parent.dependencies = []  
         self.parent.contributors = ["Noppanon Nobnop (Department of Biomedical Engineering Srinakharinwirot University.)"]  
         self.parent.helpText = _("""
-3D Slicer extension for tumor segmentation in MRI using "Tumor_Segmentator" AI model.                                                
+3D Slicer extension for pelvic tumor segmentation in MRI using "Tumor_Segmentator" AI model (U-Net).
 """)
         self.parent.acknowledgementText = _("""
 This file was originally developed by Noppanon Nobnop (ImageLab, Srinakharinwirot University).
+If you use the Tumor_Segmentator from this software in your research, please cite:
+N. Nobnop et al., doi: 10.1109/BMEiCON64021.2024.10896343 and doi: 10.1109/ICIIBMS66230.2025.11316723.
 """)
         slicer.app.connect("startupCompleted()", registerSampleData)
 
-
 #
-# Register sample data sets in Sample Data module
+# Register sample data sets
 #
 
 def registerSampleData():
@@ -118,7 +63,6 @@ def registerSampleData():
         nodeNames="Tumor_Segmentation2",
     )
 
-
 #
 # Tumor_SegmentationParameterNode
 #
@@ -130,7 +74,6 @@ class Tumor_SegmentationParameterNode:
     startSlice: int
     endSlice: int
 
-
 #
 # Tumor_SegmentationWidget
 #
@@ -138,27 +81,18 @@ class Tumor_SegmentationParameterNode:
 class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def __init__(self, parent=None):
-            ScriptedLoadableModuleWidget.__init__(self, parent)
-            VTKObservationMixin.__init__(self)
+        ScriptedLoadableModuleWidget.__init__(self, parent)
+        VTKObservationMixin.__init__(self)
+        self.logic = None
+        self._parameterNode = None
+        self._parameterNodeGuiTag = None
 
-            # เคลียร์ออกให้หมด: ห้ามเรียกใช้หรือสร้างอะไรที่เกี่ยวกับ Logic ใน __init__ เด็ดขาด
-            self._logic = None  
-            self._parameterNode = None
-            self._parameterNodeGuiTag = None
-
-            self.startSlice = None
-            self.endSlice = None
-            self.roiNode = None
-
-    @property
-    def logic(self):
-        """เรียกใช้ Logic แบบ Lazy Loading เมื่อต้องการใช้งานจริงๆ เท่านั้น ป้องกันปัญหาข้ามเซสชัน"""
-        if self._logic is None:
-            self._logic = Tumor_SegmentationLogic()
-        return self._logic
+        self.startSlice = None
+        self.endSlice = None
+        self.roiNode = None
 
     def configureDependencies(self):
-        """เช็คและดาวน์โหลดภายนอกผ่านการจัดเซสชันของระบบจัดการโมดูล"""
+        """ตรวจสอบไลบรารีภายนอก หากเครื่องผู้ใช้ยังไม่มี จะทำการดาวน์โหลดให้อัตโนมัติ"""
         import importlib
         required_packages = {
             "onnxruntime": "onnxruntime",
@@ -169,8 +103,9 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             try:
                 importlib.import_module(module_name)
             except ImportError:
-                log.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
+                logging.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
                 
+                # แสดงหน้าต่างโหลดสีฟ้าให้ผู้ใช้เห็นสถานะ
                 progress_dialog = slicer.util.createProgressDialog(
                     labelText=f"Installing {pip_name} for Tumor Segmentation. Please wait...",
                     maximum=0
@@ -181,47 +116,47 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                     slicer.util.pip_install(pip_name)
                     importlib.invalidate_caches()
                     importlib.import_module(module_name)
-                    log.info(f"--- ติดตั้ง {pip_name} สำเร็จ! ---")
+                    logging.info(f"--- ติดตั้ง {pip_name} สำเร็จ! ---")
                 except Exception as e:
-                    log.error(f"Failed to install {pip_name}: {e}")
+                    logging.error(f"Failed to install {pip_name}: {e}")
                 
                 progress_dialog.close()
 
     def setup(self):
-            ScriptedLoadableModuleWidget.setup(self)
+        ScriptedLoadableModuleWidget.setup(self)
 
-            # ย้ายการตรวจสอบและติดตั้งภายนอกมาไว้ตรงนี้ เพื่อให้ Slicer สแกนผ่านไปก่อน
-            self.configureDependencies()
+        # บังคับรันระบบตรวจเช็คและดาวน์โหลดไลบรารีทันทีที่ผู้ใช้คลิกเข้าหน้าปลั๊กอิน
+        self.configureDependencies()
 
-            # Path setup
-            uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
-            self.layout.addWidget(uiWidget)
-            self.ui = slicer.util.childWidgetVariables(uiWidget)
+        # Path setup
+        uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
+        self.layout.addWidget(uiWidget)
+        self.ui = slicer.util.childWidgetVariables(uiWidget)
 
-            uiWidget.setMRMLScene(slicer.mrmlScene)
+        uiWidget.setMRMLScene(slicer.mrmlScene)
 
-            # Segment Editor setup
-            self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
-            self.roiEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
-            self.ui.roiSegmentEditor.setMRMLSegmentEditorNode(self.roiEditorNode)
+        self.logic = Tumor_SegmentationLogic() 
 
-            # Connections
-            self.ui.inputSelector.currentNodeChanged.connect(self.onInputChanged)
-            self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
-            self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
-            self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
-            self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
-            self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
-            self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
+        # Segment Editor setup
+        self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
+        self.roiEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
+        self.ui.roiSegmentEditor.setMRMLSegmentEditorNode(self.roiEditorNode)
 
-            self.ui.show3DButton.enabled = False
-            self.ui.setStartSliceButton.enabled = True
-            self.ui.setEndSliceButton.enabled = True
-            self.ui.createRoiButton.enabled = False
-            
-            # ป้องกันการพัง: เรียกสร้าง Logic แบบนุ่มนวลที่สุดหลังเซ็ตอัพ UI เสร็จ
-            self._logic = Tumor_SegmentationLogic()
-            self.initializeParameterNode()
+        # Connections
+        self.ui.inputSelector.currentNodeChanged.connect(self.onInputChanged)
+        self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+        self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
+        self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
+        self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
+        self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
+        self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
+
+        self.ui.show3DButton.enabled = False
+        self.ui.setStartSliceButton.enabled = True
+        self.ui.setEndSliceButton.enabled = True
+        self.ui.createRoiButton.enabled = False
+        
+        self.initializeParameterNode()
 
     def onInputChanged(self, node):
         if node and self.roiNode:
@@ -237,7 +172,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         sliceIndex = sliceLogic.GetSliceIndexFromOffset(sliceLogic.GetSliceOffset())
         self.startSlice = sliceIndex
         self.ui.startSliceLabel.setText(f"Start: {sliceIndex}")
-        log.info(f"Start Slice กำหนดเป็น: {sliceIndex}")
 
     def onSetEndSlice(self):
         lm = slicer.app.layoutManager()
@@ -246,7 +180,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         sliceIndex = sliceLogic.GetSliceIndexFromOffset(sliceLogic.GetSliceOffset())
         self.endSlice = sliceIndex
         self.ui.endSliceLabel.setText(f"End: {sliceIndex}")
-        log.info(f"End Slice กำหนดเป็น: {sliceIndex}")
 
     def cleanup(self):
         self.removeObservers()
@@ -261,15 +194,11 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
 
     def initializeParameterNode(self):
-            # เปลี่ยนจากการตรวจสอบ property มาเรียกตรงๆ ป้องกัน Loop นิ่ง
-            if self._logic is None:
-                self._logic = Tumor_SegmentationLogic()
-                
-            self.setParameterNode(self._logic.getParameterNode())
-            if not self._parameterNode.inputVolume:
-                firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-                if firstVolumeNode:
-                    self._parameterNode.inputVolume = firstVolumeNode
+        self.setParameterNode(self.logic.getParameterNode())
+        if not self._parameterNode.inputVolume:
+            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+            if firstVolumeNode:
+                self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode):
         if self._parameterNode:
@@ -283,54 +212,64 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None):
-        if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.outputVolume:
-            self.ui.applyButton.enabled = True
-        else:
-            self.ui.applyButton.enabled = False
+        """ระบบตรวจสถานะปุ่ม Apply แบบปลอดภัยจากการดักจับพารามิเตอร์ว่างเปล่า"""
+        try:
+            if not self._parameterNode:
+                self.ui.applyButton.enabled = False
+                return
+
+            # เช็คความพร้อมของภาพนำเข้าแบบนุ่มนวล
+            has_input = False
+            if hasattr(self._parameterNode, 'inputVolume') and self._parameterNode.inputVolume:
+                has_input = True
+            elif self.ui.inputSelector.currentNode():
+                has_input = True
+
+            # ปลดล็อกปุ่มได้ทันทีหากเลือกภาพอินพุตแล้ว (ตัวเอาต์พุต Logic จะคำนวณและสร้างให้เอง)
+            self.ui.applyButton.enabled = has_input
+        except Exception:
+            # Fallback หากระบบแรปเปอร์เกิดข้อผิดพลาด ให้ยึดหน้า UI จริงเป็นหลัก
+            self.ui.applyButton.enabled = (self.ui.inputSelector.currentNode() is not None)
 
     def onApplyButton(self):
-            with slicer.util.tryWithErrorDisplay(_("Tumor segmentation failed."), waitCursor=True):
-                inputNode = self.ui.inputSelector.currentNode()
-                if not inputNode:
-                    raise RuntimeError("Please select input volume")
+        with slicer.util.tryWithErrorDisplay(_("Tumor segmentation failed."), waitCursor=True):
+            inputNode = self.ui.inputSelector.currentNode()
+            if not inputNode:
+                raise RuntimeError("Please select input volume")
 
-                vol = slicer.util.arrayFromVolume(inputNode)
-                depth = vol.shape[0]
+            vol = slicer.util.arrayFromVolume(inputNode)
+            depth = vol.shape[0]
 
-                if self.startSlice is None:
-                    startSlice = 0
-                else:
-                    startSlice = self.startSlice
+            if self.startSlice is None:
+                startSlice = 0
+            else:
+                startSlice = self.startSlice
 
-                if self.endSlice is None:
-                    endSlice = depth - 1
-                else:
-                    endSlice = self.endSlice
+            if self.endSlice is None:
+                endSlice = depth - 1
+            else:
+                endSlice = self.endSlice
 
-                if startSlice > endSlice:
-                    raise RuntimeError("Start slice must be smaller than End slice")
+            if startSlice > endSlice:
+                raise RuntimeError("Start slice must be smaller than End slice")
 
-                roiNode = None
-                if self.ui.useRoiCheckBox.checked:
-                    if self.roiNode is None:
-                        raise RuntimeError("Please create ROI first")
-                    roiNode = self.roiNode
+            roiNode = None
+            if self.ui.useRoiCheckBox.checked:
+                if self.roiNode is None:
+                    raise RuntimeError("Please create ROI first")
+                roiNode = self.roiNode
 
-                # มั่นใจว่าสร้างแน่ๆ ก่อนประมวลผล
-                if self._logic is None:
-                    self._logic = Tumor_SegmentationLogic()
+            segNode = self.logic.process(
+                inputVolume=inputNode,
+                outputVolume=None,
+                startSlice=startSlice,
+                endSlice=endSlice,
+                roiNode=roiNode
+            )
 
-                segNode = self._logic.process(
-                    inputVolume=inputNode,
-                    outputVolume=None,
-                    startSlice=startSlice,
-                    endSlice=endSlice,
-                    roiNode=roiNode
-                )
-
-                self._logic._showAxialOnly(inputNode, segNode)
-                self._currentSegNode = segNode
-                self.ui.show3DButton.enabled = True
+            self.logic._showAxialOnly(inputNode, segNode)
+            self._currentSegNode = segNode
+            self.ui.show3DButton.enabled = True
 
     def onCreateRoi(self):
         inputNode = self.ui.inputSelector.currentNode()
@@ -343,16 +282,14 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         self.roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", "ROI_Segmentation")
         self.roiNode.CreateDefaultDisplayNodes()
-        self.roiNode.SetReferenceImageGeometryParameterFromVolumeNode(inputVolume=inputNode)
+        self.roiNode.SetReferenceImageGeometryParameterFromVolumeNode(inputNode)
         self.roiNode.GetSegmentation().AddEmptySegment("ROI")
 
         self.ui.roiSegmentEditor.setSegmentationNode(self.roiNode)
         self.ui.roiSegmentEditor.setSourceVolumeNode(inputNode)
         slicer.util.infoDisplay("Draw ROI using Paint or Draw tool")
-        log.info("สร้าง Node ROI เรียบร้อยแล้ว พร้อมให้ผู้ใช้วาดมาร์กเกอร์")
 
     def onShow3DButton(self):
-        log.info("เรียกแสดงผลโมเดล 3D")
         segNode = getattr(self, "_currentSegNode", None)
         if not segNode:
             return
@@ -365,7 +302,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         slicer.app.layoutManager().setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpView)
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
-
 
 #
 # Tumor_SegmentationLogic
@@ -383,13 +319,22 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
     def _ensureSession(self):
         if self.session is not None:
             return
-            
-        import onnxruntime as ort
-        
-        self.modelPath = os.path.join(os.path.dirname(__file__), "Resources", "Models", "unet.onnx")
-        log.info(f"กำลังโหลดโมเดล AI จากโฟลเดอร์ทรัพยากร: {self.modelPath}")
-        
-        self.session = ort.InferenceSession(self.modelPath, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+
+        import onnxruntime as ort  # เรียกใช้ในฟังก์ชัน ป้องกันหัวไฟล์แครช
+
+        self.modelPath = os.path.join(
+            os.path.dirname(__file__),
+            "Resources", "Models", "unet.onnx"
+        )
+
+        if not os.path.exists(self.modelPath):
+            raise RuntimeError(f"ไม่พบไฟล์โมเดล AI ในตำแหน่งที่กำหนด: {self.modelPath}")
+
+        self.session = ort.InferenceSession(
+            self.modelPath,
+            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
+
         inp = self.session.get_inputs()[0]
         self.inputName = inp.name
         shape = inp.shape
@@ -422,34 +367,14 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         redSliceNode.SetOrientationToAxial()
         redWidget.sliceLogic().FitSliceToAll()
 
-    def rasToIjk(self, volumeNode, sliceOffset):
-        ras = [0, 0, sliceOffset, 1]
-        ijk = [0, 0, 0, 0]
-        volumeNode.GetRASToIJKMatrix().MultiplyPoint(ras, ijk)
-        return ijk
-
-    def _resliceToAxial(self, inputVolume):
-        axialVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", "AxialReslicedTemp")
-        params = {
-            "inputVolume": inputVolume.GetID(),
-            "outputVolume": axialVolume.GetID(),
-            "orientation": "Axial",
-            "interpolationType": "linear"
-        }
-        slicer.cli.runSync(slicer.modules.resamplescalarvolume, None, params)
-        axialVolume.GetImageData().Modified()
-        axialVolume.Modified()
-        if axialVolume.GetImageData() is None:
-            raise RuntimeError("Axial reslicing failed: output volume has no image data")
-        return axialVolume
-
     def getParameterNode(self):
         return Tumor_SegmentationParameterNode(super().getParameterNode())
 
     def process(self, inputVolume, outputVolume=None, startSlice=0, endSlice=None, roiNode=None):
-        import cv2
-        log.info(f"เริ่มการทำงานในระบบ Logic: สไลซ์เริ่มต้นที่ {startSlice} ถึง {endSlice}")
-        
+        import numpy as np
+        import cv2  # เรียกใช้ในฟังก์ชันเมื่อระบบติดตั้งเสร็จสิ้นอย่างปลอดภัย
+
+        logging.info("Starting tumor segmentation with AI Model")
         self._ensureSession()
 
         vol = slicer.util.arrayFromVolume(inputVolume)
@@ -463,6 +388,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         if roiNode is not None:
             roiMask = slicer.util.arrayFromSegmentBinaryLabelmap(roiNode, "ROI", inputVolume)
 
+        # Loop ประมวลผลภาพทีละสไลซ์
         for i in range(startSlice, endSlice + 1):
             sliceImg = vol[i]
             img = cv2.resize(sliceImg, (self.modelW, self.modelH))
@@ -478,6 +404,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
             ch0_tumor = prob_map[0, :, :]
             ch1_background = prob_map[1, :, :]
+
             pred = (ch0_tumor > ch1_background).astype(np.uint8)
             pred = cv2.resize(pred, (width, height), interpolation=cv2.INTER_NEAREST)
 
@@ -514,9 +441,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         seg = segNode.GetSegmentation()
         segmentID = seg.GetNthSegmentID(0)
         segment = seg.GetSegment(segmentID)
-        segment.SetColor(1.0, 0.0, 0.0)
+        segment.SetColor(1.0, 0.0, 0.0)  # กำหนดสีแดงให้เนื้องอก
 
         slicer.mrmlScene.RemoveNode(labelmapNode)
-        
-        log.info("การคำนวณและอัปเดต Volume หน้าจอเสร็จสิ้น")
         return segNode
