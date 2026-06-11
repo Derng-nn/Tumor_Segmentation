@@ -10,13 +10,9 @@ from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
-from slicer.parameterNodeWrapper import (
-    parameterNodeWrapper,
-    WithinRange,
-)
+from slicer.parameterNodeWrapper import parameterNodeWrapper
 
 from slicer import vtkMRMLScalarVolumeNode
-
 
 #
 # Tumor_Segmentation
@@ -39,7 +35,6 @@ class Tumor_Segmentation(ScriptedLoadableModule):
         self.parent.acknowledgementText = _("""
 This file was originally developed by Noppanon Nobnop (ImageLab, Srinakharinwirot University).
 """)
-        # ลงทะเบียน Sample Data
         slicer.app.connect("startupCompleted()", registerSampleData)
 
 
@@ -95,10 +90,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         ScriptedLoadableModuleWidget.__init__(self, parent)
         VTKObservationMixin.__init__(self)
 
-        # Check&Install Library when Install Module
-        self.configureDependencies()
-
-        self.logic = None
+        self._logic = None  # เปลี่ยนเป็น Private Variable เพื่อทำ Lazy Loading
         self._parameterNode = None
         self._parameterNodeGuiTag = None
 
@@ -106,11 +98,16 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.endSlice = None
         self.roiNode = None
 
-    def configureDependencies(self):
-        """Check&Install Library automatic and clear cash"""
-        import importlib
-        import sys
+    @property
+    def logic(self):
+        """เรียกใช้ Logic แบบ Lazy Loading เมื่อต้องการใช้งานจริงๆ เท่านั้น ป้องกันปัญหาข้ามเซสชัน"""
+        if self._logic is None:
+            self._logic = Tumor_SegmentationLogic()
+        return self._logic
 
+    def configureDependencies(self):
+        """เช็คและดาวน์โหลดภายนอกผ่านการจัดเซสชันของระบบจัดการโมดูล"""
+        import importlib
         required_packages = {
             "onnxruntime": "onnxruntime",
             "cv2": "opencv-python"
@@ -122,7 +119,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             except ImportError:
                 logging.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
                 
-                # แสดง Progress Bar บนหน้าจอเพื่อไม่ให้ระบบนิ่งไปเฉยๆ
                 progress_dialog = slicer.util.createProgressDialog(
                     labelText=f"Installing {pip_name} for Tumor Segmentation. Please wait...",
                     maximum=0
@@ -142,14 +138,15 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
 
+        # ย้ายการทำงานมาไว้ที่จุดเริ่มต้นของ setup() เพื่อความปลอดภัยสูงสุดของหน่วยความจำเซสชัน
+        self.configureDependencies()
+
         # Path setup
         uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
 
         uiWidget.setMRMLScene(slicer.mrmlScene)
-
-        self.logic = Tumor_SegmentationLogic() 
 
         # Segment Editor setup
         self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
@@ -161,9 +158,9 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
         self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
         self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
-        self.ui.useRoiCheckBox.connect("toggled(bool)",self.onUseRoiToggled)
-        self.ui.setStartSliceButton.connect("clicked(bool)",self.onSetStartSlice)
-        self.ui.setEndSliceButton.connect("clicked(bool)",self.onSetEndSlice)
+        self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
+        self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
+        self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
 
         self.ui.show3DButton.enabled = False
         self.ui.setStartSliceButton.enabled = True
@@ -315,15 +312,11 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         self.inputName = None
         self.modelH = 256
         self.modelW = 256
-        
-        # แก้ไขจุดนี้: นำเอาการพยายามโหลด ONNX ออกไป เพื่อป้องกัน Slicer แสกนเจอตอนเริ่มระบบครั้งแรก
-        # เราจะปล่อยให้โมเดลโหลดแบบปลอดภัยเมื่อถูกกดเรียกใช้งานผ่านฟังก์ชันด้านล่างแทน
 
     def _ensureSession(self):
         if self.session is not None:
             return
             
-        # ย้ายการ import คลังโปรแกรมมาอยู่ในฟังก์ชันแบบไดนามิก ปลอดภัยจาก Error 100%
         import onnxruntime as ort
         
         self.modelPath = os.path.join(os.path.dirname(__file__), "Resources", "Models", "unet.onnx")
@@ -388,7 +381,6 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         import cv2
         logging.info("Starting tumor segmentation")
         
-        # ฟังก์ชันนี้จะทำหน้าที่ตรวจสอบ และ Import onnxruntime สดๆ หลังจากตัวแปรได้รับการติดตั้งแล้ว
         self._ensureSession()
 
         vol = slicer.util.arrayFromVolume(inputVolume)
