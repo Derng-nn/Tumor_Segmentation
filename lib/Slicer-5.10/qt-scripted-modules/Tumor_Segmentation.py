@@ -1,5 +1,6 @@
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 from typing import Annotated
 
 import numpy as np
@@ -13,6 +14,56 @@ from slicer.util import VTKObservationMixin
 from slicer.parameterNodeWrapper import parameterNodeWrapper
 
 from slicer import vtkMRMLScalarVolumeNode
+
+# ====================================================================
+# ระบบรักษาสิทธิ์และการตั้งค่าไฟล์ Log อัตโนมัติ (ป้องกันปัญหาตอนย้ายเครื่อง)
+# ====================================================================
+def setup_module_logger():
+    """
+    ตั้งค่า Logger ประจำโมดูล ให้เขียนไฟล์ Log อยู่ในโครงสร้างโฟลเดอร์ของตัวเองเสมอ
+    และควบคุมขนาดไฟล์ไม่ให้บวมขึ้นเรื่อยๆ
+    """
+    logger_name = "TumorSegmentationLogger"
+    logger = logging.getLogger(logger_name)
+    
+    # ถ้าถูก Initialize ไปแล้วในเซสชันนี้ ไม่ต้องสร้าง Handler ซ้ำ (ป้องกัน Log เบิ้ลบรรทัด)
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+    try:
+        # บังคับหา Path สัมบูรณ์ของโฟลเดอร์ปัจจุบัน (Tumor_Segmentation/)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        log_dir = os.path.join(current_dir, "Resources", "Logs")
+        
+        # สร้างโฟลเดอร์ Logs มารองรับถ้ายังไม่มี
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+            
+        log_path = os.path.join(log_dir, "tumor_segmentation.log")
+        
+        # จำกัดขนาดไฟล์ที่ 500KB และหมุนเวียนเก็บสำรองสูงสุด 3 ไฟล์ (.log, .log.1, .log.2)
+        file_handler = RotatingFileHandler(log_path, maxBytes=500000, backupCount=3, encoding='utf-8')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        logger.info("=== Tumor Segmentation Logger Initialized Successfully ===")
+        
+    except Exception as e:
+        # แผนสำรอง: หากเครื่องปลายทางล็อกสิทธิ์โฟลเดอร์ (Write Access Denied) ให้ย้ายไปเซฟที่ Temp ของระบบ
+        fallback_dir = slicer.app.temporaryPath
+        log_path = os.path.join(fallback_dir, "tumor_segmentation_fallback.log")
+        file_handler = RotatingFileHandler(log_path, maxBytes=500000, backupCount=3, encoding='utf-8')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        logger.warning(f"Cannot write log to module directory. Fallback to Slicer Temp: {e}")
+
+    return logger
+
+# เรียกใช้งาน Logger ระดับ Global ภายในไฟล์นี้
+log = setup_module_logger()
+
 
 #
 # Tumor_Segmentation
@@ -117,7 +168,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             try:
                 importlib.import_module(module_name)
             except ImportError:
-                logging.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
+                log.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
                 
                 progress_dialog = slicer.util.createProgressDialog(
                     labelText=f"Installing {pip_name} for Tumor Segmentation. Please wait...",
@@ -129,11 +180,11 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                     slicer.util.pip_install(pip_name)
                     importlib.invalidate_caches()
                     importlib.import_module(module_name)
-                    logging.info(f"--- ติดตั้ง {pip_name} สำเร็จ! ---")
+                    log.info(f"--- ติดตั้ง {pip_name} สำเร็จ! ---")
                 except Exception as e:
-                    logging.error(f"Failed to install {pip_name}: {e}")
-                finally:
-                    progress_dialog.close()
+                    log.error(f"Failed to install {pip_name}: {e}")
+                
+                progress_dialog.close()
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -182,6 +233,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         sliceIndex = sliceLogic.GetSliceIndexFromOffset(sliceLogic.GetSliceOffset())
         self.startSlice = sliceIndex
         self.ui.startSliceLabel.setText(f"Start: {sliceIndex}")
+        log.info(f"Start Slice กำหนดเป็น: {sliceIndex}")
 
     def onSetEndSlice(self):
         lm = slicer.app.layoutManager()
@@ -190,6 +242,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         sliceIndex = sliceLogic.GetSliceIndexFromOffset(sliceLogic.GetSliceOffset())
         self.endSlice = sliceIndex
         self.ui.endSliceLabel.setText(f"End: {sliceIndex}")
+        log.info(f"End Slice กำหนดเป็น: {sliceIndex}")
 
     def cleanup(self):
         self.removeObservers()
@@ -228,6 +281,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.ui.applyButton.enabled = False
 
     def onApplyButton(self):
+        log.info("ผู้ใช้คลิก Apply Button เพื่อเริ่มกระบวนการ Segmentation")
         with slicer.util.tryWithErrorDisplay(_("Tumor segmentation failed."), waitCursor=True):
             inputNode = self.ui.inputSelector.currentNode()
             if not inputNode:
@@ -255,6 +309,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                     raise RuntimeError("Please create ROI first")
                 roiNode = self.roiNode
 
+            # ส่งต่อการทำงานไปให้ตัว Logic
             segNode = self.logic.process(
                 inputVolume=inputNode,
                 outputVolume=None,
@@ -266,6 +321,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.logic._showAxialOnly(inputNode, segNode)
             self._currentSegNode = segNode
             self.ui.show3DButton.enabled = True
+            log.info("กระบวนการ Segmentation ประสบความสำเร็จ")
 
     def onCreateRoi(self):
         inputNode = self.ui.inputSelector.currentNode()
@@ -284,8 +340,10 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.ui.roiSegmentEditor.setSegmentationNode(self.roiNode)
         self.ui.roiSegmentEditor.setSourceVolumeNode(inputNode)
         slicer.util.infoDisplay("Draw ROI using Paint or Draw tool")
+        log.info("สร้าง Node ROI เรียบร้อยแล้ว พร้อมให้ผู้ใช้วาดมาร์กเกอร์")
 
     def onShow3DButton(self):
+        log.info("เรียกแสดงผลโมเดล 3D")
         segNode = getattr(self, "_currentSegNode", None)
         if not segNode:
             return
@@ -320,6 +378,8 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         import onnxruntime as ort
         
         self.modelPath = os.path.join(os.path.dirname(__file__), "Resources", "Models", "unet.onnx")
+        log.info(f"กำลังโหลดโมเดล AI จากโฟลเดอร์ทรัพยากร: {self.modelPath}")
+        
         self.session = ort.InferenceSession(self.modelPath, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
         inp = self.session.get_inputs()[0]
         self.inputName = inp.name
@@ -379,7 +439,7 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
     def process(self, inputVolume, outputVolume=None, startSlice=0, endSlice=None, roiNode=None):
         import cv2
-        logging.info("Starting tumor segmentation")
+        log.info(f"เริ่มการทำงานในระบบ Logic: สไลซ์เริ่มต้นที่ {startSlice} ถึง {endSlice}")
         
         self._ensureSession()
 
@@ -448,4 +508,6 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         segment.SetColor(1.0, 0.0, 0.0)
 
         slicer.mrmlScene.RemoveNode(labelmapNode)
+        
+        log.info("การคำนวณและอัปเดต Volume หน้าจอเสร็จสิ้น")
         return segNode
