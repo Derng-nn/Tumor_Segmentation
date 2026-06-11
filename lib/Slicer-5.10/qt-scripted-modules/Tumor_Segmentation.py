@@ -35,12 +35,9 @@ class Tumor_Segmentation(ScriptedLoadableModule):
         self.parent.contributors = ["Noppanon Nobnop (Department of Biomedical Engineering Srinakharinwirot University.)"]  
         self.parent.helpText = _("""
 3D Slicer extension for tumor segmentation in MRI using "Tumor_Segmentator" AI model.                                                
-
-See more information in <a href="https://github.com/organization/projectname#Tumor_Segmentation">module documentation</a>.
 """)
         self.parent.acknowledgementText = _("""
 This file was originally developed by Noppanon Nobnop (ImageLab, Srinakharinwirot University).
-...
 """)
         # ลงทะเบียน Sample Data
         slicer.app.connect("startupCompleted()", registerSampleData)
@@ -98,9 +95,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         ScriptedLoadableModuleWidget.__init__(self, parent)
         VTKObservationMixin.__init__(self)
 
-        # -------------------------------------------------------------
-        # แก้ไขจุดสำคัญที่สุด: บังคับเช็คและติดตั้งตรงนี้ทันทีเมื่อผู้ใช้กด Install เพื่อให้พร้อมใช้งานในคลิกเดียว
-        # -------------------------------------------------------------
+        # Check&Install Library when Install Module
         self.configureDependencies()
 
         self.logic = None
@@ -112,7 +107,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.roiNode = None
 
     def configureDependencies(self):
-        """เช็คและติดตั้ง Library อัตโนมัติ พร้อมบังคับให้ Python รู้จักทันทีในรอบนั้นๆ"""
+        """Check&Install Library automatic and clear cash"""
         import importlib
         import sys
 
@@ -123,12 +118,11 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         for module_name, pip_name in required_packages.items():
             try:
-                # ลองตรวจสอบว่ามีอยู่ในระบบแล้วหรือยัง
                 importlib.import_module(module_name)
             except ImportError:
-                logging.info(f"--- ไม่พบ {module_name} กำลังติดตั้ง {pip_name} กรุณารอสักครู่... ---")
+                logging.info(f"--- ไม่พบ {module_name} กำลังดาวน์โหลดและติดตั้ง {pip_name}... ---")
                 
-                # แสดงหน้าต่างแจ้งเตือนผู้ใช้ชั่วคราวขณะดาวน์โหลดเพื่อความลื่นไหล
+                # แสดง Progress Bar บนหน้าจอเพื่อไม่ให้ระบบนิ่งไปเฉยๆ
                 progress_dialog = slicer.util.createProgressDialog(
                     labelText=f"Installing {pip_name} for Tumor Segmentation. Please wait...",
                     maximum=0
@@ -136,16 +130,12 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                 slicer.app.processEvents()
 
                 try:
-                    # สั่งดาวน์โหลด
                     slicer.util.pip_install(pip_name)
-                    
-                    # หัวใจสำคัญ: บังคับเคลียร์ Cache ของระบบเพื่อให้ Python มองเห็น Library ใหม่ในทันทีโดยไม่ต้องเปิดโปรแกรมใหม่
                     importlib.invalidate_caches()
                     importlib.import_module(module_name)
-                    
-                    logging.info(f"--- ติดตั้ง {pip_name} สำเร็จและพร้อมใช้งานแล้ว! ---")
+                    logging.info(f"--- ติดตั้ง {pip_name} สำเร็จ! ---")
                 except Exception as e:
-                    logging.error(f"ไม่สามารถติดตั้ง {pip_name} ได้โดยอัตโนมัติ: {e}")
+                    logging.error(f"Failed to install {pip_name}: {e}")
                 finally:
                     progress_dialog.close()
 
@@ -159,7 +149,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         uiWidget.setMRMLScene(slicer.mrmlScene)
 
-        self.logic = Tumor_SegmentationLogic() # เรียกใช้ logic
+        self.logic = Tumor_SegmentationLogic() 
 
         # Segment Editor setup
         self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
@@ -291,7 +281,7 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
 
         self.roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode", "ROI_Segmentation")
         self.roiNode.CreateDefaultDisplayNodes()
-        self.roiNode.SetReferenceImageGeometryParameterFromVolumeNode(inputNode)
+        self.roiNode.SetReferenceImageGeometryParameterFromVolumeNode(inputVolume=inputNode)
         self.roiNode.GetSegmentation().AddEmptySegment("ROI")
 
         self.ui.roiSegmentEditor.setSegmentationNode(self.roiNode)
@@ -325,22 +315,17 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         self.inputName = None
         self.modelH = 256
         self.modelW = 256
-
-        try:
-            import onnxruntime as ort
-            modelPath = os.path.join(os.path.dirname(__file__), "Resources", "Models", "unet.onnx")
-            print("Loading ONNX model...")
-            self.session = ort.InferenceSession(modelPath, providers=["CPUExecutionProvider"])
-            self.inputName = self.session.get_inputs()[0].name
-            print("ONNX model loaded successfully")
-        except Exception as e:
-            print("Failed to load ONNX model")
-            print(e)
+        
+        # แก้ไขจุดนี้: นำเอาการพยายามโหลด ONNX ออกไป เพื่อป้องกัน Slicer แสกนเจอตอนเริ่มระบบครั้งแรก
+        # เราจะปล่อยให้โมเดลโหลดแบบปลอดภัยเมื่อถูกกดเรียกใช้งานผ่านฟังก์ชันด้านล่างแทน
 
     def _ensureSession(self):
         if self.session is not None:
             return
+            
+        # ย้ายการ import คลังโปรแกรมมาอยู่ในฟังก์ชันแบบไดนามิก ปลอดภัยจาก Error 100%
         import onnxruntime as ort
+        
         self.modelPath = os.path.join(os.path.dirname(__file__), "Resources", "Models", "unet.onnx")
         self.session = ort.InferenceSession(self.modelPath, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
         inp = self.session.get_inputs()[0]
@@ -402,6 +387,8 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
     def process(self, inputVolume, outputVolume=None, startSlice=0, endSlice=None, roiNode=None):
         import cv2
         logging.info("Starting tumor segmentation")
+        
+        # ฟังก์ชันนี้จะทำหน้าที่ตรวจสอบ และ Import onnxruntime สดๆ หลังจากตัวแปรได้รับการติดตั้งแล้ว
         self._ensureSession()
 
         vol = slicer.util.arrayFromVolume(inputVolume)
