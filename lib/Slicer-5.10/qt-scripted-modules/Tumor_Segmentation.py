@@ -138,16 +138,17 @@ class Tumor_SegmentationParameterNode:
 class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def __init__(self, parent=None):
-        ScriptedLoadableModuleWidget.__init__(self, parent)
-        VTKObservationMixin.__init__(self)
+            ScriptedLoadableModuleWidget.__init__(self, parent)
+            VTKObservationMixin.__init__(self)
 
-        self._logic = None  # เปลี่ยนเป็น Private Variable เพื่อทำ Lazy Loading
-        self._parameterNode = None
-        self._parameterNodeGuiTag = None
+            # เคลียร์ออกให้หมด: ห้ามเรียกใช้หรือสร้างอะไรที่เกี่ยวกับ Logic ใน __init__ เด็ดขาด
+            self._logic = None  
+            self._parameterNode = None
+            self._parameterNodeGuiTag = None
 
-        self.startSlice = None
-        self.endSlice = None
-        self.roiNode = None
+            self.startSlice = None
+            self.endSlice = None
+            self.roiNode = None
 
     @property
     def logic(self):
@@ -187,37 +188,40 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
                 progress_dialog.close()
 
     def setup(self):
-        ScriptedLoadableModuleWidget.setup(self)
+            ScriptedLoadableModuleWidget.setup(self)
 
-        # ย้ายการทำงานมาไว้ที่จุดเริ่มต้นของ setup() เพื่อความปลอดภัยสูงสุดของหน่วยความจำเซสชัน
-        self.configureDependencies()
+            # ย้ายการตรวจสอบและติดตั้งภายนอกมาไว้ตรงนี้ เพื่อให้ Slicer สแกนผ่านไปก่อน
+            self.configureDependencies()
 
-        # Path setup
-        uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
-        self.layout.addWidget(uiWidget)
-        self.ui = slicer.util.childWidgetVariables(uiWidget)
+            # Path setup
+            uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
+            self.layout.addWidget(uiWidget)
+            self.ui = slicer.util.childWidgetVariables(uiWidget)
 
-        uiWidget.setMRMLScene(slicer.mrmlScene)
+            uiWidget.setMRMLScene(slicer.mrmlScene)
 
-        # Segment Editor setup
-        self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
-        self.roiEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
-        self.ui.roiSegmentEditor.setMRMLSegmentEditorNode(self.roiEditorNode)
+            # Segment Editor setup
+            self.ui.roiSegmentEditor.setMRMLScene(slicer.mrmlScene)
+            self.roiEditorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentEditorNode")
+            self.ui.roiSegmentEditor.setMRMLSegmentEditorNode(self.roiEditorNode)
 
-        # Connections
-        self.ui.inputSelector.currentNodeChanged.connect(self.onInputChanged)
-        self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
-        self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
-        self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
-        self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
-        self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
-        self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
+            # Connections
+            self.ui.inputSelector.currentNodeChanged.connect(self.onInputChanged)
+            self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+            self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
+            self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
+            self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
+            self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
+            self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
 
-        self.ui.show3DButton.enabled = False
-        self.ui.setStartSliceButton.enabled = True
-        self.ui.setEndSliceButton.enabled = True
-        self.ui.createRoiButton.enabled = False
-        self.initializeParameterNode()
+            self.ui.show3DButton.enabled = False
+            self.ui.setStartSliceButton.enabled = True
+            self.ui.setEndSliceButton.enabled = True
+            self.ui.createRoiButton.enabled = False
+            
+            # ป้องกันการพัง: เรียกสร้าง Logic แบบนุ่มนวลที่สุดหลังเซ็ตอัพ UI เสร็จ
+            self._logic = Tumor_SegmentationLogic()
+            self.initializeParameterNode()
 
     def onInputChanged(self, node):
         if node and self.roiNode:
@@ -257,11 +261,15 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self._checkCanApply)
 
     def initializeParameterNode(self):
-        self.setParameterNode(self.logic.getParameterNode())
-        if not self._parameterNode.inputVolume:
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-            if firstVolumeNode:
-                self._parameterNode.inputVolume = firstVolumeNode
+            # เปลี่ยนจากการตรวจสอบ property มาเรียกตรงๆ ป้องกัน Loop นิ่ง
+            if self._logic is None:
+                self._logic = Tumor_SegmentationLogic()
+                
+            self.setParameterNode(self._logic.getParameterNode())
+            if not self._parameterNode.inputVolume:
+                firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+                if firstVolumeNode:
+                    self._parameterNode.inputVolume = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode):
         if self._parameterNode:
@@ -281,47 +289,48 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             self.ui.applyButton.enabled = False
 
     def onApplyButton(self):
-        log.info("ผู้ใช้คลิก Apply Button เพื่อเริ่มกระบวนการ Segmentation")
-        with slicer.util.tryWithErrorDisplay(_("Tumor segmentation failed."), waitCursor=True):
-            inputNode = self.ui.inputSelector.currentNode()
-            if not inputNode:
-                raise RuntimeError("Please select input volume")
+            with slicer.util.tryWithErrorDisplay(_("Tumor segmentation failed."), waitCursor=True):
+                inputNode = self.ui.inputSelector.currentNode()
+                if not inputNode:
+                    raise RuntimeError("Please select input volume")
 
-            vol = slicer.util.arrayFromVolume(inputNode)
-            depth = vol.shape[0]
+                vol = slicer.util.arrayFromVolume(inputNode)
+                depth = vol.shape[0]
 
-            if self.startSlice is None:
-                startSlice = 0
-            else:
-                startSlice = self.startSlice
+                if self.startSlice is None:
+                    startSlice = 0
+                else:
+                    startSlice = self.startSlice
 
-            if self.endSlice is None:
-                endSlice = depth - 1
-            else:
-                endSlice = self.endSlice
+                if self.endSlice is None:
+                    endSlice = depth - 1
+                else:
+                    endSlice = self.endSlice
 
-            if startSlice > endSlice:
-                raise RuntimeError("Start slice must be smaller than End slice")
+                if startSlice > endSlice:
+                    raise RuntimeError("Start slice must be smaller than End slice")
 
-            roiNode = None
-            if self.ui.useRoiCheckBox.checked:
-                if self.roiNode is None:
-                    raise RuntimeError("Please create ROI first")
-                roiNode = self.roiNode
+                roiNode = None
+                if self.ui.useRoiCheckBox.checked:
+                    if self.roiNode is None:
+                        raise RuntimeError("Please create ROI first")
+                    roiNode = self.roiNode
 
-            # ส่งต่อการทำงานไปให้ตัว Logic
-            segNode = self.logic.process(
-                inputVolume=inputNode,
-                outputVolume=None,
-                startSlice=startSlice,
-                endSlice=endSlice,
-                roiNode=roiNode
-            )
+                # มั่นใจว่าสร้างแน่ๆ ก่อนประมวลผล
+                if self._logic is None:
+                    self._logic = Tumor_SegmentationLogic()
 
-            self.logic._showAxialOnly(inputNode, segNode)
-            self._currentSegNode = segNode
-            self.ui.show3DButton.enabled = True
-            log.info("กระบวนการ Segmentation ประสบความสำเร็จ")
+                segNode = self._logic.process(
+                    inputVolume=inputNode,
+                    outputVolume=None,
+                    startSlice=startSlice,
+                    endSlice=endSlice,
+                    roiNode=roiNode
+                )
+
+                self._logic._showAxialOnly(inputNode, segNode)
+                self._currentSegNode = segNode
+                self.ui.show3DButton.enabled = True
 
     def onCreateRoi(self):
         inputNode = self.ui.inputSelector.currentNode()
