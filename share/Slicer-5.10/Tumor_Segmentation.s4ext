@@ -1,3 +1,9 @@
+#
+# First token of each non-comment line is the keyword and the rest of the line
+# (including spaces) is the value.
+# - the value can be blank
+#
+
 # This is source code manager
 scm git
 scmurl https://github.com/Derng-nn/Tumor_Segmentation.git
