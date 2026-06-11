@@ -352,7 +352,12 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             if self.endSlice is None:
                 endSlice = depth - 1
             else:
-                endSlice = self.endSlice
+                endSlice = min(self.endSlice, depth - 1)
+
+            if self.startSlice is None:
+                startSlice = 0
+            else:
+                startSlice = max(0, self.startSlice)    
 
             if startSlice > endSlice:
                 raise RuntimeError("Start slice must be smaller than End slice")
@@ -456,6 +461,12 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         import onnxruntime as ort
         import os
+
+        if self.session is None:
+            raise RuntimeError(
+                "ONNX model not loaded. "
+                "Please check Resources/Models/unet.onnx"
+            )
 
         self.session = None
         self.inputName = None
@@ -632,8 +643,16 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         depth, height, width = vol.shape
 
+        startSlice = max(0, startSlice)
+
         if endSlice is None:
             endSlice = depth - 1
+        else:
+            endSlice = min(endSlice, depth - 1) 
+
+        print(f"Depth={depth}")
+        print(f"Start={startSlice}")
+        print(f"End={endSlice}")
 
         outputMask = np.zeros_like(vol, dtype=np.uint8)
 
@@ -705,6 +724,9 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             # -------------------------
             if roiMask is not None:
 
+                if i >= roiMask.shape[0]:
+                        continue
+
                 roiSlice = roiMask[i]
 
                 # normalize ROI
@@ -729,19 +751,6 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         print("Final mask sum:", np.sum(outputMask))
 
-        # -----------------------------
-        # Create output volume
-        # -----------------------------
-        if outputVolume is None:
-
-            outputVolume = slicer.mrmlScene.AddNewNodeByClass(
-                "vtkMRMLScalarVolumeNode",
-                "TumorMaskVolume"
-            )
-
-            outputVolume.CreateDefaultDisplayNodes()
-
-        slicer.util.updateVolumeFromArray(outputVolume, outputMask)
 
         # -----------------------------
         # Create labelmap
@@ -763,6 +772,14 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         # -----------------------------
         # Create segmentation node
         # -----------------------------
+        oldSegNode = slicer.mrmlScene.GetFirstNodeByName(
+            "TumorSegmentation"
+        )
+
+        if oldSegNode:
+            slicer.mrmlScene.RemoveNode(oldSegNode)
+        
+
         segNode = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLSegmentationNode",
             "TumorSegmentation"
