@@ -1,40 +1,11 @@
-def ensurePythonPackage(packageName, importName=None):
-
-    if importName is None:
-        importName = packageName
-
-    try:
-        __import__(importName)
-        print(f"{packageName} already installed")
-        return True
-
-    except ImportError:
-
-        print(f"Installing {packageName} ...")
-
-        try:
-            slicer.util.pip_install(packageName)
-
-            __import__(importName)
-
-            print(f"{packageName} installed successfully")
-            return True
-
-        except Exception as e:
-
-            slicer.util.errorDisplay(
-                f"Cannot install {packageName}\n\n{e}"
-            )
-
-            return False
-
 import logging
 import os
-import slicer
+from typing import Annotated
+
 import numpy as np
 import vtk
 
-
+import slicer
 from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
@@ -59,26 +30,47 @@ class Tumor_Segmentation(ScriptedLoadableModule):
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("Tumor Segmentation")  # Human readable with spaces
+        self.parent.title = _("Tumor Segmentation")
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "Segmentation")]
         self.parent.dependencies = []  
         self.parent.contributors = ["Noppanon Nobnop (Department of Biomedical Engineering Srinakharinwirot University.)"]  
         self.parent.helpText = _("""
-3D Slicer extension for tumor segmentation in MRI using "Tumor_Segmentator" AI model.                                
+3D Slicer extension for tumor segmentation in MRI using "Tumor_Segmentator" AI model.                                                
 
 See more information in <a href="https://github.com/organization/projectname#Tumor_Segmentation">module documentation</a>.
 """)
         self.parent.acknowledgementText = _("""
 This file was originally developed by Noppanon Nobnop (ImageLab, Srinakharinwirot University).
-If you use the Tumor_Segmentator from this software in your research, please cite:                                      
+If you use the Tumor_Segmentator from this software in your research, please cite:                                                   
 N. Nobnop, N. Yamcharoen, C. Sukjamsri, T. Piboonthummasak, T. Charoenpong and P. Kiatisevi, 
 "Pelvic Tumor Segmentation in MRI Images Using Deep Learning with DeepLabV3+ and U-Net: A Performance Comparison," 
 doi: 10.1109/BMEiCON64021.2024.10896343. and N. Nobnop, P. Kiatisevi, C. Sukjamsri and T. Charoenpong, 
 "Pelvic Tumor Segmentation in Magnetic Resonance Images By U-Net," doi: 10.1109/ICIIBMS66230.2025.11316723.
 """)
 
+        #  Check & install ibraries needed
+        self.configureDependencies()
+
         # Additional initialization step after application startup is complete
         slicer.app.connect("startupCompleted()", registerSampleData)
+
+    def configureDependencies(self):
+        """Check and download from pip Slicer"""
+        required_packages = {
+            "onnxruntime": "onnxruntime",
+            "cv2": "opencv-python"
+        }
+
+        for module_name, pip_name in required_packages.items():
+            try:
+                __import__(module_name)
+            except ImportError:
+                logging.info(f"--- {module_name} not found. Installing {pip_name} via Slicer pip... ---")
+                try:
+                    slicer.util.pip_install(pip_name)
+                    logging.info(f"--- {pip_name} installed successfully! ---")
+                except Exception as e:
+                    logging.error(f"Failed to install {pip_name}: {e}")
 
 
 #
@@ -127,7 +119,6 @@ class Tumor_SegmentationParameterNode:
     startSlice: int
     endSlice: int
 
-
 #
 # Tumor_SegmentationWidget
 #
@@ -151,14 +142,14 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
 
-        # Path setup
+        #Path setup
         uiWidget = slicer.util.loadUI(self.resourcePath("UI/Tumor_Segmentation.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
 
         uiWidget.setMRMLScene(slicer.mrmlScene)
 
-        self.logic = Tumor_SegmentationLogic() # call logic
+        self.logic = Tumor_SegmentationLogic() #call logic
 
         # -----------------------------
         # Segment Editor setup
@@ -174,9 +165,9 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
         self.ui.show3DButton.connect("clicked(bool)", self.onShow3DButton)
         self.ui.createRoiButton.clicked.connect(self.onCreateRoi)
-        self.ui.useRoiCheckBox.connect("toggled(bool)", self.onUseRoiToggled)
-        self.ui.setStartSliceButton.connect("clicked(bool)", self.onSetStartSlice)
-        self.ui.setEndSliceButton.connect("clicked(bool)", self.onSetEndSlice)
+        self.ui.useRoiCheckBox.connect("toggled(bool)",self.onUseRoiToggled)
+        self.ui.setStartSliceButton.connect("clicked(bool)",self.onSetStartSlice)
+        self.ui.setEndSliceButton.connect("clicked(bool)",self.onSetEndSlice)
 
         self.ui.show3DButton.enabled = False
         self.ui.setStartSliceButton.enabled = True
@@ -296,17 +287,17 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             depth = vol.shape[0]
 
             # -----------------------------
-            # Slice range setup
+            # Slice range
             # -----------------------------
             if self.startSlice is None:
                 startSlice = 0
             else:
-                startSlice = max(0, self.startSlice)
+                startSlice = self.startSlice
 
             if self.endSlice is None:
                 endSlice = depth - 1
             else:
-                endSlice = min(self.endSlice, depth - 1)
+                endSlice = self.endSlice
 
             if startSlice > endSlice:
                 raise RuntimeError("Start slice must be smaller than End slice")
@@ -355,7 +346,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
             "vtkMRMLSegmentationNode",
             "ROI_Segmentation"
         )
-
         self.roiNode.CreateDefaultDisplayNodes()
         self.roiNode.SetReferenceImageGeometryParameterFromVolumeNode(inputNode)
         self.roiNode.GetSegmentation().AddEmptySegment("ROI")
@@ -384,7 +374,6 @@ class Tumor_SegmentationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin
         )
         slicer.app.layoutManager().threeDWidget(0).threeDView().resetFocalPoint()
 
-
 #
 # Tumor_SegmentationLogic
 #
@@ -395,16 +384,13 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
     def __init__(self):
         ScriptedLoadableModuleLogic.__init__(self)
 
-        import onnxruntime as ort
-        import os
-
-        # FIXED: Initialize variables first before checking or using them
         self.session = None
         self.inputName = None
         self.modelH = 256
         self.modelW = 256
 
         try:
+            import onnxruntime as ort
             modelPath = os.path.join(
                 os.path.dirname(__file__),
                 "Resources",
@@ -415,28 +401,22 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             print("Model path:", modelPath)
             print("File exists:", os.path.exists(modelPath))
 
-            if not os.path.exists(modelPath):
-                raise FileNotFoundError(f"Model file not found at {modelPath}")
-
             self.session = ort.InferenceSession(
                 modelPath,
                 providers=["CPUExecutionProvider"]
             )
-
             self.inputName = self.session.get_inputs()[0].name
             print("ONNX model loaded successfully")
 
         except Exception as e:
-            print("Failed to load ONNX model initially:")
+            print("Failed to load ONNX model")
             print(e)
-            # Don't crash here; _ensureSession will try to load it again with CUDA/CPU when processing
 
 
     def _ensureSession(self):
         if self.session is not None:
             return
 
-        import os
         import onnxruntime as ort
 
         self.modelPath = os.path.join(
@@ -502,7 +482,6 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
 
     def _resliceToAxial(self, inputVolume):
-        """Force volume to Axial orientation using ResampleScalarVolume"""
         axialVolume = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLScalarVolumeNode",
             "AxialReslicedTemp"
@@ -534,9 +513,6 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         return Tumor_SegmentationParameterNode(super().getParameterNode())
 
 
-    # -------------------------
-    # Main process
-    # -------------------------
     def process(
             self,
             inputVolume,
@@ -545,35 +521,20 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             endSlice=None,
             roiNode=None
         ):
-
-        import numpy as np
+        # ทำการอิมพอร์ตภายในฟังก์ชันทั้งหมดเพื่อความปลอดภัย
         import cv2
-        import slicer
-        import vtk
-
         logging.info("Starting tumor segmentation")
 
-        # Ensure ONNX session
         self._ensureSession()
 
-        # Load volume
         vol = slicer.util.arrayFromVolume(inputVolume)
         depth, height, width = vol.shape
 
-        startSlice = max(0, startSlice)
-
         if endSlice is None:
             endSlice = depth - 1
-        else:
-            endSlice = min(endSlice, depth - 1) 
-
-        print(f"Depth={depth}")
-        print(f"Start={startSlice}")
-        print(f"End={endSlice}")
 
         outputMask = np.zeros_like(vol, dtype=np.uint8)
 
-        # ROI mask
         roiMask = None
         if roiNode is not None:
             roiMask = slicer.util.arrayFromSegmentBinaryLabelmap(
@@ -582,11 +543,9 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
                 inputVolume
             )
 
-        # Slice loop
         for i in range(startSlice, endSlice + 1):
             sliceImg = vol[i]
 
-            # Preprocess
             img = cv2.resize(
                 sliceImg,
                 (self.modelW, self.modelH)
@@ -595,14 +554,13 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             img = np.expand_dims(img, axis=0)
             img = np.expand_dims(img, axis=0)
 
-            # ONNX inference
             outputs = self.session.run(
                 None,
                 {self.inputName: img}
             )
+
             raw_result = np.squeeze(outputs[0])
 
-            # Softmax
             exp_x = np.exp(raw_result - np.max(raw_result, axis=0))
             prob_map = exp_x / exp_x.sum(axis=0)
 
@@ -611,18 +569,13 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
             pred = (ch0_tumor > ch1_background).astype(np.uint8)
 
-            # Resize back to original
             pred = cv2.resize(
                 pred,
                 (width, height),
                 interpolation=cv2.INTER_NEAREST
             )
 
-            # Apply ROI mask
             if roiMask is not None:
-                if i >= roiMask.shape[0]:
-                    continue
-
                 roiSlice = roiMask[i]
                 roiSlice = (roiSlice > 0).astype(np.uint8)
 
@@ -632,22 +585,28 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
                         (pred.shape[1], pred.shape[0]),
                         interpolation=cv2.INTER_NEAREST
                     )
-
                 pred = pred * roiSlice
 
-            # Store result
             outputMask[i] = pred
             print("Slice", i, "tumor pixels:", np.sum(pred))
 
         print("Final mask sum:", np.sum(outputMask))
 
-        # Create labelmap
+        if outputVolume is None:
+            outputVolume = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLScalarVolumeNode",
+                "TumorMaskVolume"
+            )
+            outputVolume.CreateDefaultDisplayNodes()
+
+        slicer.util.updateVolumeFromArray(outputVolume, outputMask)
+
         labelmapNode = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLLabelMapVolumeNode",
             "TumorLabelMap"
         )
-
         slicer.util.updateVolumeFromArray(labelmapNode, outputMask)
+
         labelmapNode.SetSpacing(inputVolume.GetSpacing())
         labelmapNode.SetOrigin(inputVolume.GetOrigin())
 
@@ -655,17 +614,10 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
         inputVolume.GetIJKToRASMatrix(ijkToRAS)
         labelmapNode.SetIJKToRASMatrix(ijkToRAS)
 
-        # Create segmentation node
-        oldSegNode = slicer.mrmlScene.GetFirstNodeByName("TumorSegmentation")
-        if oldSegNode:
-            slicer.mrmlScene.RemoveNode(oldSegNode)
-        
-
         segNode = slicer.mrmlScene.AddNewNodeByClass(
             "vtkMRMLSegmentationNode",
             "TumorSegmentation"
         )
-
         segNode.CreateDefaultDisplayNodes()
         segNode.SetReferenceImageGeometryParameterFromVolumeNode(inputVolume)
 
@@ -674,12 +626,10 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             segNode
         )
 
-        # Set tumor color to red
         seg = segNode.GetSegmentation()
         segmentID = seg.GetNthSegmentID(0)
         segment = seg.GetSegment(segmentID)
-        if segment:
-            segment.SetColor(1.0, 0.0, 0.0)   # Red
+        segment.SetColor(1.0, 0.0, 0.0)   # red
 
         slicer.mrmlScene.RemoveNode(labelmapNode)
 
