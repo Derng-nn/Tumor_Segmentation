@@ -1,14 +1,9 @@
 import logging
 import os
-from typing import Annotated
-
 import numpy as np
-import onnxruntime as ort
-import cv2
-
 import vtk
-
 import slicer
+
 from slicer.i18n import tr as _
 from slicer.i18n import translate
 from slicer.ScriptedLoadableModule import *
@@ -425,6 +420,8 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         ScriptedLoadableModuleLogic.__init__(self)
 
+        self.installRequiredPackages()
+
         import onnxruntime as ort
         import os
 
@@ -460,28 +457,78 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             print(e)
 
 
+    def installRequiredPackages(self):
+
+        import importlib
+
+        packages = [
+            ("onnxruntime", "onnxruntime"),
+            ("opencv-python", "cv2"),
+        ]
+
+        for pipName, importName in packages:
+
+            try:
+
+                __import__(importName)
+
+            except ImportError:
+
+                slicer.util.infoDisplay(
+                    f"Installing required package:\n{pipName}\n\nPlease wait..."
+                )
+
+                try:
+
+                    slicer.util.pip_install(pipName)
+
+                    importlib.invalidate_caches()
+
+                    __import__(importName)
+
+                except Exception as e:
+
+                    slicer.util.errorDisplay(
+                        f"Failed to install package:\n{pipName}\n\n{e}"
+                    )
+
+                    raise
+
+
     def _ensureSession(self):
+
         if self.session is not None:
             return
 
-        import os
+        self.installRequiredPackages()
+
         import onnxruntime as ort
 
-        self.modelPath = os.path.join(
-            os.path.dirname(__file__),
-            "Resources", "Models", "unet.onnx"
-        )
+        if not os.path.exists(self.modelPath):
+
+            raise RuntimeError(
+                f"ONNX model not found:\n{self.modelPath}"
+            )
+
+        logging.info("Loading ONNX model...")
 
         self.session = ort.InferenceSession(
             self.modelPath,
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            providers=["CPUExecutionProvider"]
         )
 
         inp = self.session.get_inputs()[0]
+
         self.inputName = inp.name
+
         shape = inp.shape
-        self.modelH = shape[2] or 256
-        self.modelW = shape[3] or 256
+
+        if len(shape) >= 4:
+
+            self.modelH = shape[2] or 256
+            self.modelW = shape[3] or 256
+
+        logging.info("ONNX model loaded successfully")
 
 
     def _showAxialOnly(self, volumeNode, segNode):
