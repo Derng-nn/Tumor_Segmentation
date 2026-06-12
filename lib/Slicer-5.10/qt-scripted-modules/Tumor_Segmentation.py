@@ -420,41 +420,18 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
 
         ScriptedLoadableModuleLogic.__init__(self)
 
-        self.installRequiredPackages()
-
-        import onnxruntime as ort
-        import os
-
         self.session = None
         self.inputName = None
+
         self.modelH = 256
         self.modelW = 256
 
-        try:
-
-            modelPath = os.path.join(
-                os.path.dirname(__file__),
-                "Resources",
-                "Models",
-                "unet.onnx"
-            )
-            print("Loading ONNX model...")
-            print("Model path:", modelPath)
-            print("File exists:", os.path.exists(modelPath))
-
-            self.session = ort.InferenceSession(
-                modelPath,
-                providers=["CPUExecutionProvider"]
-            )
-
-            self.inputName = self.session.get_inputs()[0].name
-
-            print("ONNX model loaded successfully")
-
-        except Exception as e:
-
-            print("Failed to load ONNX model")
-            print(e)
+        self.modelPath = os.path.join(
+            os.path.dirname(__file__),
+            "Resources",
+            "Models",
+            "unet.onnx"
+        )
 
 
     def installRequiredPackages(self):
@@ -630,6 +607,8 @@ class Tumor_SegmentationLogic(ScriptedLoadableModuleLogic):
             endSlice=None,
             roiNode=None
         ):
+
+        self.installRequiredPackages()
 
         import numpy as np
         import cv2
